@@ -1,0 +1,25 @@
+[MASTER]
+ignore=venv,.git,__pycache__
+
+[MESSAGES CONTROL]
+disable=
+    C0111,  # missing-docstring (we have docstrings in key places)
+    R0903,  # too-few-public-methods
+    C0114,  # missing-module-docstring (handled by our docstrings)
+
+[FORMAT]
+max-line-length=79
+indent-string='    '
+
+[DESIGN]
+max-args=7
+max-locals=15
+max-returns=6
+max-branches=12
+max-statements=50
+
+[BASIC]
+good-names=i,j,k,ex,_,id,fd
+
+[SIMILARITIES]
+min-similarity-lines=4

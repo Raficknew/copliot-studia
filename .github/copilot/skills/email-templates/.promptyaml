@@ -1,0 +1,18 @@
+name: email-templates
+description: Skill dla tworzenia i zarządzania szablonami email (HTML/Plain text) z variable substitution i template inheritance
+topics:
+  - email
+  - templates
+  - jinja2
+  - html
+  - text-formatting
+applyTo:
+  - path: "**/templates/**"
+  - path: "**/email_*.py"
+  - path: "**/test_*email*"
+languageDetection:
+  preferredLanguage: python
+  patterns:
+    - "template"
+    - "email"
+    - "html"
