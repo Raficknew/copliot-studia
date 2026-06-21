@@ -1,36 +1,43 @@
-"""Subscriber management for the Mailer application."""
+"""Subscriber management module."""
 
+import json
+import os
 from typing import List, Optional, Set
-from dataclasses import dataclass, field
-from datetime import datetime
-from .validators import EmailValidator
+from pathlib import Path
 
-
-@dataclass
-class Subscriber:
-    """Represents a mailing list subscriber.
-
-    Attributes:
-        email: Subscriber's email address
-        subscribed_at: Timestamp when subscription was created
-        active: Whether the subscription is active
-    """
-
-    email: str
-    subscribed_at: datetime = field(default_factory=datetime.now)
-    active: bool = True
-
-    def __post_init__(self) -> None:
-        """Validate email after initialization."""
-        self.email = EmailValidator.validate_or_raise(self.email)
+from mailer.validators import EmailValidator
 
 
 class SubscriberManager:
     """Manages mailing list subscribers."""
 
-    def __init__(self) -> None:
-        """Initialize subscriber manager with empty list."""
+    def __init__(self, storage_path: str = "subscribers.json"):
+        """Initialize subscriber manager.
+
+        Args:
+            storage_path: Path to JSON file for storing subscribers
+        """
+        self.storage_path = storage_path
         self._subscribers: Set[str] = set()
+        self._load_subscribers()
+
+    def _load_subscribers(self) -> None:
+        """Load subscribers from storage file."""
+        if os.path.exists(self.storage_path):
+            try:
+                with open(self.storage_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    self._subscribers = set(data.get("subscribers", []))
+            except (json.JSONDecodeError, IOError):
+                self._subscribers = set()
+
+    def _save_subscribers(self) -> None:
+        """Save subscribers to storage file."""
+        try:
+            with open(self.storage_path, "w", encoding="utf-8") as f:
+                json.dump({"subscribers": list(self._subscribers)}, f, indent=2)
+        except IOError as e:
+            raise IOError(f"Failed to save subscribers: {e}") from e
 
     def add_subscriber(self, email: str) -> bool:
         """Add a new subscriber to the mailing list.
@@ -39,17 +46,20 @@ class SubscriberManager:
             email: Email address to add
 
         Returns:
-            True if subscriber was added, False if already exists
+            True if added successfully, False if already exists
 
         Raises:
             ValueError: If email format is invalid
         """
-        validated_email = EmailValidator.validate_or_raise(email).lower()
-        
-        if validated_email in self._subscribers:
+        sanitized = EmailValidator.sanitize(email)
+        if not sanitized:
+            raise ValueError(f"Invalid email format: {email}")
+
+        if sanitized in self._subscribers:
             return False
-        
-        self._subscribers.add(validated_email)
+
+        self._subscribers.add(sanitized)
+        self._save_subscribers()
         return True
 
     def remove_subscriber(self, email: str) -> bool:
@@ -59,43 +69,33 @@ class SubscriberManager:
             email: Email address to remove
 
         Returns:
-            True if subscriber was removed, False if not found
+            True if removed successfully, False if not found
         """
-        email_lower = email.strip().lower()
-        
-        if email_lower in self._subscribers:
-            self._subscribers.remove(email_lower)
-            return True
-        
-        return False
+        sanitized = EmailValidator.sanitize(email)
+        if not sanitized or sanitized not in self._subscribers:
+            return False
+
+        self._subscribers.remove(sanitized)
+        self._save_subscribers()
+        return True
 
     def get_subscribers(self) -> List[str]:
-        """Get list of all subscribers.
+        """Get all subscribers.
 
         Returns:
             List of subscriber email addresses
         """
         return sorted(list(self._subscribers))
 
-    def has_subscriber(self, email: str) -> bool:
-        """Check if email is in subscriber list.
-
-        Args:
-            email: Email address to check
-
-        Returns:
-            True if subscriber exists, False otherwise
-        """
-        return email.strip().lower() in self._subscribers
-
-    def get_subscriber_count(self) -> int:
+    def count(self) -> int:
         """Get total number of subscribers.
 
         Returns:
-            Number of active subscribers
+            Number of subscribers
         """
         return len(self._subscribers)
 
-    def clear_subscribers(self) -> None:
-        """Remove all subscribers from the list."""
+    def clear(self) -> None:
+        """Remove all subscribers."""
         self._subscribers.clear()
+        self._save_subscribers()

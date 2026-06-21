@@ -3,71 +3,86 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mailer - Subscriber Management</title>
+    <title>Mailer - Mailing List Management</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
     <div class="container">
         <header>
             <h1>📧 Mailer</h1>
-            <p>Manage your mailing list and send newsletters</p>
+            <p class="subtitle">Mailing List Management System</p>
         </header>
 
-        <section class="subscribe-section">
-            <h2>Subscribe to Newsletter</h2>
-            <form id="subscribe-form">
-                <input 
-                    type="email" 
-                    id="email-input" 
-                    placeholder="Enter your email address" 
-                    required
-                />
-                <button type="submit">Subscribe</button>
-            </form>
-            <div id="message"></div>
-        </section>
+        <main>
+            <!-- Subscribe Section -->
+            <section class="card">
+                <h2>Subscribe</h2>
+                <form id="subscribeForm">
+                    <input 
+                        type="email" 
+                        id="subscribeEmail" 
+                        placeholder="Enter your email"
+                        required
+                    >
+                    <button type="submit" class="btn btn-primary">Subscribe</button>
+                </form>
+                <div id="subscribeMessage" class="message"></div>
+            </section>
 
-        <section class="subscribers-section">
-            <h2>Subscribers ({{ count }})</h2>
-            <div class="subscribers-list" id="subscribers-list">
-                {% if subscribers %}
-                    <ul>
-                    {% for subscriber in subscribers %}
-                        <li>
-                            <span>{{ subscriber }}</span>
-                            <button class="unsubscribe-btn" data-email="{{ subscriber }}">Unsubscribe</button>
-                        </li>
-                    {% endfor %}
-                    </ul>
-                {% else %}
-                    <p class="empty-state">No subscribers yet. Be the first to subscribe!</p>
-                {% endif %}
-            </div>
-        </section>
+            <!-- Unsubscribe Section -->
+            <section class="card">
+                <h2>Unsubscribe</h2>
+                <form id="unsubscribeForm">
+                    <input 
+                        type="email" 
+                        id="unsubscribeEmail" 
+                        placeholder="Enter your email"
+                        required
+                    >
+                    <button type="submit" class="btn btn-secondary">Unsubscribe</button>
+                </form>
+                <div id="unsubscribeMessage" class="message"></div>
+            </section>
 
-        <section class="send-email-section">
-            <h2>Send Email to All Subscribers</h2>
-            <form id="send-email-form">
-                <input 
-                    type="text" 
-                    id="subject-input" 
-                    placeholder="Email Subject" 
-                    required
-                />
-                <textarea 
-                    id="body-input" 
-                    placeholder="Email Body" 
-                    rows="6"
-                    required
-                ></textarea>
-                <label>
-                    <input type="checkbox" id="html-checkbox" />
-                    Send as HTML
-                </label>
-                <button type="submit">Send to All</button>
-            </form>
-            <div id="send-message"></div>
-        </section>
+            <!-- Send Email Section -->
+            <section class="card">
+                <h2>Send Email to Subscribers</h2>
+                <form id="sendEmailForm">
+                    <input 
+                        type="text" 
+                        id="emailSubject" 
+                        placeholder="Email subject"
+                        required
+                    >
+                    <textarea 
+                        id="emailBody" 
+                        placeholder="Email body"
+                        rows="5"
+                        required
+                    ></textarea>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="emailHtml">
+                        Send as HTML
+                    </label>
+                    <button type="submit" class="btn btn-primary">Send Email</button>
+                </form>
+                <div id="sendMessage" class="message"></div>
+            </section>
+
+            <!-- Subscribers List Section -->
+            <section class="card">
+                <div class="section-header">
+                    <h2>Subscribers</h2>
+                    <button id="refreshBtn" class="btn btn-small">Refresh</button>
+                </div>
+                <div id="subscriberCount" class="count">Loading...</div>
+                <ul id="subscriberList" class="subscriber-list"></ul>
+            </section>
+        </main>
+
+        <footer>
+            <p>Mailer &copy; 2026 | Built with Flask & Python</p>
+        </footer>
     </div>
 
     <script src="{{ url_for('static', filename='script.js') }}"></script>

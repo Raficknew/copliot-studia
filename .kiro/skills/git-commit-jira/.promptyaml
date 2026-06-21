@@ -1,0 +1,18 @@
+name: git-commit-jira
+description: Skill for creating well-formatted git commits with Jira ID, one-line summary, and detailed description
+topics:
+  - git
+  - commit
+  - jira
+  - version-control
+  - conventional-commits
+applyTo:
+  - context: git-commit
+  - context: terminal
+  - path: "**/.git/**"
+languageDetection:
+  preferredLanguage: git
+  patterns:
+    - "commit"
+    - "git"
+    - "JIRA"

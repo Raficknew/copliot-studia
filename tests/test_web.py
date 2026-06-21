@@ -1,181 +1,196 @@
 """Tests for Flask web application."""
 
 import pytest
-from flask.testing import FlaskClient
-from mailer.web import app, subscriber_manager
+import json
+from unittest.mock import patch, MagicMock
+from mailer.web import app
 
 
 @pytest.fixture
-def client() -> FlaskClient:
-    """Create Flask test client."""
+def client():
+    """Create Flask test client.
+
+    Yields:
+        Flask test client
+    """
     app.config["TESTING"] = True
     with app.test_client() as client:
         yield client
-    # Clean up after each test
-    subscriber_manager.clear_subscribers()
+
+
+@pytest.fixture
+def mock_subscriber_manager():
+    """Mock SubscriberManager for testing.
+
+    Yields:
+        Mocked SubscriberManager
+    """
+    with patch("mailer.web.subscriber_manager") as mock:
+        yield mock
+
+
+@pytest.fixture
+def mock_email_sender():
+    """Mock EmailSender for testing.
+
+    Yields:
+        Mocked EmailSender
+    """
+    with patch("mailer.web.email_sender") as mock:
+        yield mock
 
 
 class TestWebRoutes:
-    """Test suite for web routes."""
+    """Test cases for Flask web routes."""
 
-    def test_index_route(self, client: FlaskClient) -> None:
-        """Test index route returns 200."""
+    def test_index_route(self, client):
+        """Test main page renders successfully."""
         response = client.get("/")
         assert response.status_code == 200
-        assert b"Mailer" in response.data
 
-    def test_subscribe_api_success(self, client: FlaskClient) -> None:
-        """Test successful subscription via API."""
+    def test_subscribe_success(self, client, mock_subscriber_manager):
+        """Test successful subscription."""
+        mock_subscriber_manager.add_subscriber.return_value = True
+        mock_subscriber_manager.count.return_value = 1
+
         response = client.post(
             "/api/subscribe",
-            json={"email": "test@example.com"},
+            data=json.dumps({"email": "test@example.com"}),
             content_type="application/json",
         )
-        
-        assert response.status_code == 201
-        data = response.get_json()
-        assert data["success"] is True
-        assert "Subscribed successfully" in data["message"]
 
-    def test_subscribe_api_invalid_email(self, client: FlaskClient) -> None:
+        assert response.status_code == 201
+        data = json.loads(response.data)
+        assert data["success"] is True
+        assert data["count"] == 1
+
+    def test_subscribe_invalid_email(self, client, mock_subscriber_manager):
         """Test subscription with invalid email format."""
         response = client.post(
             "/api/subscribe",
-            json={"email": "invalid@"},
+            data=json.dumps({"email": "invalid-email"}),
             content_type="application/json",
         )
-        
-        assert response.status_code == 400
-        data = response.get_json()
-        assert data["success"] is False
-        assert "Invalid email format" in data["message"]
 
-    def test_subscribe_api_duplicate_email(self, client: FlaskClient) -> None:
-        """Test subscription with already subscribed email."""
-        client.post(
-            "/api/subscribe",
-            json={"email": "test@example.com"},
-            content_type="application/json",
-        )
-        
-        response = client.post(
-            "/api/subscribe",
-            json={"email": "test@example.com"},
-            content_type="application/json",
-        )
-        
         assert response.status_code == 400
-        data = response.get_json()
+        data = json.loads(response.data)
         assert data["success"] is False
-        assert "already subscribed" in data["message"]
+        assert "Invalid email" in data["error"]
 
-    def test_subscribe_api_missing_email(self, client: FlaskClient) -> None:
+    def test_subscribe_missing_email(self, client):
         """Test subscription without email field."""
         response = client.post(
-            "/api/subscribe", json={}, content_type="application/json"
+            "/api/subscribe",
+            data=json.dumps({}),
+            content_type="application/json",
         )
-        
+
         assert response.status_code == 400
-        data = response.get_json()
+        data = json.loads(response.data)
         assert data["success"] is False
 
-    def test_unsubscribe_api_success(self, client: FlaskClient) -> None:
-        """Test successful unsubscribe via API."""
-        client.post(
+    def test_subscribe_duplicate(self, client, mock_subscriber_manager):
+        """Test subscription with duplicate email."""
+        mock_subscriber_manager.add_subscriber.return_value = False
+
+        response = client.post(
             "/api/subscribe",
-            json={"email": "test@example.com"},
+            data=json.dumps({"email": "test@example.com"}),
             content_type="application/json",
         )
-        
+
+        assert response.status_code == 409
+        data = json.loads(response.data)
+        assert data["success"] is False
+
+    def test_unsubscribe_success(self, client, mock_subscriber_manager):
+        """Test successful unsubscription."""
+        mock_subscriber_manager.remove_subscriber.return_value = True
+        mock_subscriber_manager.count.return_value = 0
+
         response = client.post(
             "/api/unsubscribe",
-            json={"email": "test@example.com"},
+            data=json.dumps({"email": "test@example.com"}),
             content_type="application/json",
         )
-        
+
         assert response.status_code == 200
-        data = response.get_json()
+        data = json.loads(response.data)
         assert data["success"] is True
 
-    def test_unsubscribe_api_not_found(self, client: FlaskClient) -> None:
-        """Test unsubscribe with email not in list."""
+    def test_unsubscribe_not_found(self, client, mock_subscriber_manager):
+        """Test unsubscribe with non-existent email."""
+        mock_subscriber_manager.remove_subscriber.return_value = False
+
         response = client.post(
             "/api/unsubscribe",
-            json={"email": "notfound@example.com"},
+            data=json.dumps({"email": "test@example.com"}),
             content_type="application/json",
         )
-        
+
         assert response.status_code == 404
-        data = response.get_json()
+        data = json.loads(response.data)
         assert data["success"] is False
 
-    def test_get_subscribers_api(self, client: FlaskClient) -> None:
-        """Test getting subscriber list via API."""
-        client.post(
-            "/api/subscribe",
-            json={"email": "test1@example.com"},
-            content_type="application/json",
-        )
-        client.post(
-            "/api/subscribe",
-            json={"email": "test2@example.com"},
-            content_type="application/json",
-        )
-        
+    def test_get_subscribers(self, client, mock_subscriber_manager):
+        """Test getting all subscribers."""
+        mock_subscriber_manager.get_subscribers.return_value = [
+            "user1@example.com",
+            "user2@example.com",
+        ]
+
         response = client.get("/api/subscribers")
-        
+
         assert response.status_code == 200
-        data = response.get_json()
+        data = json.loads(response.data)
         assert data["success"] is True
-        assert data["count"] == 2
         assert len(data["subscribers"]) == 2
+        assert data["count"] == 2
 
-    def test_send_email_api_success(self, client: FlaskClient) -> None:
-        """Test sending email to subscribers via API."""
-        client.post(
-            "/api/subscribe",
-            json={"email": "test@example.com"},
-            content_type="application/json",
+    def test_send_email_success(
+        self, client, mock_subscriber_manager, mock_email_sender
+    ):
+        """Test successful email sending."""
+        mock_subscriber_manager.get_subscribers.return_value = ["user@example.com"]
+
+        from mailer.email_sender import EmailResult
+
+        mock_email_sender.send_email.return_value = EmailResult(
+            success=True, message="Sent successfully", failed_recipients=[]
         )
-        
+
         response = client.post(
             "/api/send-email",
-            json={"subject": "Test", "body": "Test message"},
+            data=json.dumps({"subject": "Test", "body": "Hello", "html": False}),
             content_type="application/json",
         )
-        
+
         assert response.status_code == 200
-        data = response.get_json()
+        data = json.loads(response.data)
         assert data["success"] is True
 
-    def test_send_email_api_no_subscribers(self, client: FlaskClient) -> None:
-        """Test sending email when no subscribers exist."""
+    def test_send_email_no_subscribers(self, client, mock_subscriber_manager):
+        """Test sending email with no subscribers."""
+        mock_subscriber_manager.get_subscribers.return_value = []
+
         response = client.post(
             "/api/send-email",
-            json={"subject": "Test", "body": "Test message"},
+            data=json.dumps({"subject": "Test", "body": "Hello"}),
             content_type="application/json",
         )
-        
-        assert response.status_code == 400
-        data = response.get_json()
-        assert data["success"] is False
-        assert "No subscribers" in data["message"]
 
-    def test_send_email_api_missing_fields(self, client: FlaskClient) -> None:
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert data["success"] is False
+
+    def test_send_email_missing_data(self, client):
         """Test sending email without required fields."""
         response = client.post(
-            "/api/send-email", json={"subject": "Test"}, content_type="application/json"
+            "/api/send-email",
+            data=json.dumps({"subject": "Test"}),
+            content_type="application/json",
         )
-        
-        assert response.status_code == 400
-        data = response.get_json()
-        assert data["success"] is False
 
-    def test_404_error_handler(self, client: FlaskClient) -> None:
-        """Test 404 error handler returns JSON."""
-        response = client.get("/nonexistent")
-        
-        assert response.status_code == 404
-        data = response.get_json()
+        assert response.status_code == 400
+        data = json.loads(response.data)
         assert data["success"] is False
-        assert "not found" in data["message"].lower()

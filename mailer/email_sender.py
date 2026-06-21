@@ -1,152 +1,149 @@
-"""Email sending functionality for the Mailer application."""
+"""Email sending module with SMTP support."""
 
-import smtplib
 import os
+import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
-from .validators import EmailValidator
 
 
 @dataclass
 class EmailResult:
-    """Result of email sending operation.
-
-    Attributes:
-        success: Whether email was sent successfully
-        recipient: Email address of recipient
-        error: Error message if sending failed
-    """
+    """Result of email sending operation."""
 
     success: bool
-    recipient: str
-    error: Optional[str] = None
+    message: str
+    failed_recipients: List[str]
 
 
 class EmailSender:
-    """Handles sending emails to subscribers."""
+    """Handles email sending operations."""
 
     def __init__(
         self,
-        smtp_host: Optional[str] = None,
+        smtp_server: Optional[str] = None,
         smtp_port: Optional[int] = None,
         smtp_username: Optional[str] = None,
         smtp_password: Optional[str] = None,
-        smtp_client: Optional[Any] = None,
-    ) -> None:
-        """Initialize email sender with SMTP configuration.
+        use_tls: bool = True,
+    ):
+        """Initialize email sender.
 
         Args:
-            smtp_host: SMTP server hostname
+            smtp_server: SMTP server address
             smtp_port: SMTP server port
             smtp_username: SMTP authentication username
             smtp_password: SMTP authentication password
-            smtp_client: Mock SMTP client for testing
+            use_tls: Whether to use TLS encryption
         """
-        self.smtp_host = smtp_host or os.getenv("SMTP_HOST", "localhost")
+        self.smtp_server = smtp_server or os.getenv("SMTP_SERVER", "")
         self.smtp_port = smtp_port or int(os.getenv("SMTP_PORT", "587"))
         self.smtp_username = smtp_username or os.getenv("SMTP_USERNAME", "")
         self.smtp_password = smtp_password or os.getenv("SMTP_PASSWORD", "")
-        self._smtp_client = smtp_client
+        self.use_tls = use_tls
 
-    def send(
-        self,
-        recipient: str,
-        subject: str,
-        body: str,
-        from_email: Optional[str] = None,
-        html: bool = False,
-    ) -> EmailResult:
-        """Send email to a single recipient.
-
-        Args:
-            recipient: Recipient email address
-            subject: Email subject line
-            body: Email body content
-            from_email: Sender email address
-            html: Whether body is HTML content
-
-        Returns:
-            EmailResult with success status and details
-
-        Example:
-            >>> sender = EmailSender()
-            >>> result = sender.send("user@example.com", "Hello", "Test message")
-            >>> result.success
-            True
-        """
-        try:
-            # Validate recipient email
-            recipient = EmailValidator.validate_or_raise(recipient)
-
-            # Create message
-            msg = MIMEMultipart("alternative") if html else MIMEText(body)
-            msg["Subject"] = subject
-            msg["From"] = from_email or self.smtp_username
-            msg["To"] = recipient
-
-            if html:
-                msg.attach(MIMEText(body, "html"))
-
-            # Send email
-            if self._smtp_client:
-                # Use mock client for testing
-                self._smtp_client.sendmail(msg["From"], recipient, msg.as_string())
-            else:
-                # Use real SMTP connection
-                with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
-                    server.starttls()
-                    if self.smtp_username and self.smtp_password:
-                        server.login(self.smtp_username, self.smtp_password)
-                    server.sendmail(msg["From"], recipient, msg.as_string())
-
-            return EmailResult(success=True, recipient=recipient)
-
-        except ValueError as e:
-            return EmailResult(success=False, recipient=recipient, error=str(e))
-        except smtplib.SMTPException as e:
-            return EmailResult(
-                success=False, recipient=recipient, error=f"SMTP error: {str(e)}"
-            )
-        except Exception as e:
-            return EmailResult(
-                success=False, recipient=recipient, error=f"Unexpected error: {str(e)}"
-            )
-
-    def send_bulk(
+    def send_email(
         self,
         recipients: List[str],
         subject: str,
         body: str,
-        from_email: Optional[str] = None,
         html: bool = False,
-    ) -> List[EmailResult]:
-        """Send email to multiple recipients.
+        sender: Optional[str] = None,
+    ) -> EmailResult:
+        """Send email to recipients.
 
         Args:
             recipients: List of recipient email addresses
-            subject: Email subject line
+            subject: Email subject
             body: Email body content
-            from_email: Sender email address
-            html: Whether body is HTML content
+            html: Whether body is HTML format
+            sender: Sender email address
 
         Returns:
-            List of EmailResult objects for each recipient
+            EmailResult with success status and details
         """
-        results = []
-        for recipient in recipients:
-            result = self.send(recipient, subject, body, from_email, html)
-            results.append(result)
-        return results
+        if not recipients:
+            return EmailResult(
+                success=False,
+                message="No recipients provided",
+                failed_recipients=[],
+            )
 
-    def get_success_count(self, results: List[EmailResult]) -> int:
-        """Count successful email deliveries.
+        if not self.smtp_server:
+            return EmailResult(
+                success=False,
+                message="SMTP server not configured",
+                failed_recipients=recipients,
+            )
+
+        sender_email = sender or self.smtp_username
+        failed = []
+
+        try:
+            with smtplib.SMTP(self.smtp_server, self.smtp_port, timeout=30) as server:
+                if self.use_tls:
+                    server.starttls()
+
+                if self.smtp_username and self.smtp_password:
+                    server.login(self.smtp_username, self.smtp_password)
+
+                for recipient in recipients:
+                    try:
+                        msg = self._create_message(
+                            sender_email, recipient, subject, body, html
+                        )
+                        server.send_message(msg)
+                    except Exception as e:
+                        failed.append(recipient)
+                        print(f"Failed to send to {recipient}: {e}")
+
+            if failed:
+                return EmailResult(
+                    success=False,
+                    message=f"Failed to send to {len(failed)} recipients",
+                    failed_recipients=failed,
+                )
+
+            return EmailResult(
+                success=True,
+                message=f"Successfully sent to {len(recipients)} recipients",
+                failed_recipients=[],
+            )
+
+        except Exception as e:
+            return EmailResult(
+                success=False,
+                message=f"SMTP error: {str(e)}",
+                failed_recipients=recipients,
+            )
+
+    def _create_message(
+        self,
+        sender: str,
+        recipient: str,
+        subject: str,
+        body: str,
+        html: bool,
+    ) -> MIMEMultipart:
+        """Create email message.
 
         Args:
-            results: List of EmailResult objects
+            sender: Sender email address
+            recipient: Recipient email address
+            subject: Email subject
+            body: Email body
+            html: Whether body is HTML
 
         Returns:
-            Number of successful deliveries
+            MIMEMultipart message object
         """
-        return sum(1 for result in results if result.success)
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = sender
+        msg["To"] = recipient
+
+        mime_type = "html" if html else "plain"
+        msg.attach(MIMEText(body, mime_type))
+
+        return msg

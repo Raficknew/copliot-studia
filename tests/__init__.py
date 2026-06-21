@@ -1,1 +1,1 @@
-"""Test suite for the Mailer application."""
+"""Test suite for Mailer application."""

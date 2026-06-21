@@ -1,109 +1,121 @@
-"""Tests for subscriber management functionality."""
+"""Tests for subscriber management module."""
 
+import os
 import pytest
-from mailer.subscribers import SubscriberManager, Subscriber
+import tempfile
+from mailer.subscribers import SubscriberManager
 
 
-class TestSubscriber:
-    """Test suite for Subscriber class."""
+@pytest.fixture
+def temp_storage():
+    """Create temporary storage file for testing.
 
-    def test_create_subscriber_success(self) -> None:
-        """Test creating subscriber with valid email."""
-        subscriber = Subscriber(email="user@example.com")
-        assert subscriber.email == "user@example.com"
-        assert subscriber.active is True
+    Yields:
+        Path to temporary storage file
+    """
+    fd, path = tempfile.mkstemp(suffix=".json")
+    os.close(fd)
+    yield path
+    if os.path.exists(path):
+        os.remove(path)
 
-    def test_create_subscriber_invalid_email(self) -> None:
-        """Test creating subscriber with invalid email raises ValueError."""
-        with pytest.raises(ValueError):
-            Subscriber(email="invalid@")
 
-    def test_subscriber_has_timestamp(self) -> None:
-        """Test subscriber has subscribed_at timestamp."""
-        subscriber = Subscriber(email="user@example.com")
-        assert subscriber.subscribed_at is not None
+@pytest.fixture
+def manager(temp_storage):
+    """Create SubscriberManager instance for testing.
+
+    Args:
+        temp_storage: Temporary storage file path
+
+    Yields:
+        SubscriberManager instance
+    """
+    return SubscriberManager(storage_path=temp_storage)
 
 
 class TestSubscriberManager:
-    """Test suite for SubscriberManager class."""
+    """Test cases for SubscriberManager class."""
 
-    @pytest.fixture
-    def manager(self) -> SubscriberManager:
-        """Create SubscriberManager instance for testing."""
-        return SubscriberManager()
-
-    def test_add_subscriber_success(self, manager: SubscriberManager) -> None:
-        """Test adding new subscriber returns True."""
+    def test_add_subscriber_success(self, manager: SubscriberManager):
+        """Test adding new subscriber."""
         result = manager.add_subscriber("user@example.com")
         assert result is True
-        assert manager.get_subscriber_count() == 1
+        assert manager.count() == 1
 
-    def test_add_duplicate_subscriber(self, manager: SubscriberManager) -> None:
+    def test_add_subscriber_duplicate(self, manager: SubscriberManager):
         """Test adding duplicate subscriber returns False."""
         manager.add_subscriber("user@example.com")
         result = manager.add_subscriber("user@example.com")
         assert result is False
-        assert manager.get_subscriber_count() == 1
+        assert manager.count() == 1
 
-    def test_add_subscriber_invalid_email(self, manager: SubscriberManager) -> None:
-        """Test adding subscriber with invalid email raises ValueError."""
+    def test_add_subscriber_case_insensitive(self, manager: SubscriberManager):
+        """Test adding same email with different case."""
+        manager.add_subscriber("User@Example.COM")
+        result = manager.add_subscriber("user@example.com")
+        assert result is False
+        assert manager.count() == 1
+
+    def test_add_subscriber_invalid_email(self, manager: SubscriberManager):
+        """Test adding invalid email raises ValueError."""
         with pytest.raises(ValueError):
-            manager.add_subscriber("invalid@")
+            manager.add_subscriber("invalid-email")
 
-    def test_remove_subscriber_success(self, manager: SubscriberManager) -> None:
-        """Test removing existing subscriber returns True."""
+    def test_remove_subscriber_success(self, manager: SubscriberManager):
+        """Test removing existing subscriber."""
         manager.add_subscriber("user@example.com")
         result = manager.remove_subscriber("user@example.com")
         assert result is True
-        assert manager.get_subscriber_count() == 0
+        assert manager.count() == 0
 
-    def test_remove_nonexistent_subscriber(self, manager: SubscriberManager) -> None:
+    def test_remove_subscriber_not_found(self, manager: SubscriberManager):
         """Test removing non-existent subscriber returns False."""
-        result = manager.remove_subscriber("user@example.com")
+        result = manager.remove_subscriber("nonexistent@example.com")
         assert result is False
 
-    def test_get_subscribers_empty(self, manager: SubscriberManager) -> None:
-        """Test getting subscribers from empty list returns empty list."""
-        assert manager.get_subscribers() == []
+    def test_get_subscribers(self, manager: SubscriberManager):
+        """Test getting all subscribers."""
+        emails = ["user1@example.com", "user2@example.com"]
+        for email in emails:
+            manager.add_subscriber(email)
 
-    def test_get_subscribers_returns_sorted(self, manager: SubscriberManager) -> None:
-        """Test get_subscribers returns sorted list."""
+        subscribers = manager.get_subscribers()
+        assert len(subscribers) == 2
+        assert sorted(subscribers) == sorted(emails)
+
+    def test_get_subscribers_sorted(self, manager: SubscriberManager):
+        """Test subscribers are returned sorted."""
         manager.add_subscriber("zebra@example.com")
         manager.add_subscriber("alpha@example.com")
-        manager.add_subscriber("beta@example.com")
-        
+
         subscribers = manager.get_subscribers()
-        assert subscribers == ["alpha@example.com", "beta@example.com", "zebra@example.com"]
+        assert subscribers == ["alpha@example.com", "zebra@example.com"]
 
-    def test_has_subscriber_true(self, manager: SubscriberManager) -> None:
-        """Test has_subscriber returns True for existing subscriber."""
-        manager.add_subscriber("user@example.com")
-        assert manager.has_subscriber("user@example.com") is True
+    def test_count(self, manager: SubscriberManager):
+        """Test counting subscribers."""
+        assert manager.count() == 0
 
-    def test_has_subscriber_false(self, manager: SubscriberManager) -> None:
-        """Test has_subscriber returns False for non-existent subscriber."""
-        assert manager.has_subscriber("user@example.com") is False
-
-    def test_get_subscriber_count(self, manager: SubscriberManager) -> None:
-        """Test get_subscriber_count returns correct count."""
-        assert manager.get_subscriber_count() == 0
-        
         manager.add_subscriber("user1@example.com")
-        assert manager.get_subscriber_count() == 1
-        
-        manager.add_subscriber("user2@example.com")
-        assert manager.get_subscriber_count() == 2
+        assert manager.count() == 1
 
-    def test_clear_subscribers(self, manager: SubscriberManager) -> None:
-        """Test clear_subscribers removes all subscribers."""
+        manager.add_subscriber("user2@example.com")
+        assert manager.count() == 2
+
+    def test_clear(self, manager: SubscriberManager):
+        """Test clearing all subscribers."""
         manager.add_subscriber("user1@example.com")
         manager.add_subscriber("user2@example.com")
-        
-        manager.clear_subscribers()
-        assert manager.get_subscriber_count() == 0
-        assert manager.get_subscribers() == []
+        assert manager.count() == 2
 
-    def test_case_insensitive_email(self, manager: SubscriberManager) -> None:
-        """Test email handling is case insensitive."""
-        manager.add_subscriber("User@Example.COM")
-        assert manager.has_subscriber("user@example.com") is True
+        manager.clear()
+        assert manager.count() == 0
+
+    def test_persistence(self, temp_storage: str):
+        """Test subscribers persist across instances."""
+        manager1 = SubscriberManager(storage_path=temp_storage)
+        manager1.add_subscriber("user@example.com")
+        assert manager1.count() == 1
+
+        manager2 = SubscriberManager(storage_path=temp_storage)
+        assert manager2.count() == 1
+        assert "user@example.com" in manager2.get_subscribers()

@@ -1,185 +1,192 @@
-"""Flask web application for the Mailer service."""
+"""Flask web application for Mailer."""
 
 import os
-from flask import Flask, render_template, request, jsonify, redirect, url_for
-from typing import Dict, Any
-from .subscribers import SubscriberManager
-from .email_sender import EmailSender
-from .validators import EmailValidator
+from typing import Dict, Any, Tuple
+from flask import Flask, render_template, request, jsonify
 
-# Get the project root directory (parent of mailer package)
-project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-template_dir = os.path.join(project_root, 'templates')
-static_dir = os.path.join(project_root, 'static')
+from mailer.subscribers import SubscriberManager
+from mailer.email_sender import EmailSender
+from mailer.validators import EmailValidator
 
-app = Flask(__name__, template_folder=template_dir, static_folder=static_dir)
+
+app = Flask(
+    __name__,
+    template_folder="../templates",
+    static_folder="../static",
+)
+
+# Initialize managers
 subscriber_manager = SubscriberManager()
 email_sender = EmailSender()
 
 
 @app.route("/")
 def index() -> str:
-    """Render main page with subscriber list.
+    """Render main page.
 
     Returns:
         Rendered HTML template
     """
-    subscribers = subscriber_manager.get_subscribers()
-    count = subscriber_manager.get_subscriber_count()
-    return render_template("index.html", subscribers=subscribers, count=count)
+    return render_template("index.html")
 
 
 @app.route("/api/subscribe", methods=["POST"])
-def subscribe() -> Dict[str, Any]:
-    """Handle subscription request via API.
+def subscribe() -> Tuple[Dict[str, Any], int]:
+    """Add subscriber to mailing list.
 
     Returns:
-        JSON response with status and message
-
-    Example Request:
-        POST /api/subscribe
-        {"email": "user@example.com"}
-
-    Example Response:
-        {"success": true, "message": "Subscribed successfully"}
+        JSON response with status and HTTP status code
     """
+    data = request.get_json()
+
+    if not data or "email" not in data:
+        return jsonify({"success": False, "error": "Email required"}), 400
+
+    email = data["email"]
+
+    if not EmailValidator.validate(email):
+        return (
+            jsonify({"success": False, "error": "Invalid email format"}),
+            400,
+        )
+
     try:
-        data = request.get_json()
-        
-        if not data or "email" not in data:
-            return jsonify({"success": False, "message": "Email is required"}), 400
-
-        email = data["email"]
-
-        # Validate email format
-        if not EmailValidator.validate(email):
-            return jsonify({"success": False, "message": "Invalid email format"}), 400
-
-        # Add subscriber
         added = subscriber_manager.add_subscriber(email)
-        
-        if not added:
-            return jsonify(
-                {"success": False, "message": "Email already subscribed"}
-            ), 400
-
-        return jsonify({"success": True, "message": "Subscribed successfully"}), 201
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+        if added:
+            return (
+                jsonify(
+                    {
+                        "success": True,
+                        "message": "Successfully subscribed",
+                        "count": subscriber_manager.count(),
+                    }
+                ),
+                201,
+            )
+        else:
+            return (
+                jsonify({"success": False, "error": "Already subscribed"}),
+                409,
+            )
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
 
 
 @app.route("/api/unsubscribe", methods=["POST"])
-def unsubscribe() -> Dict[str, Any]:
-    """Handle unsubscribe request via API.
+def unsubscribe() -> Tuple[Dict[str, Any], int]:
+    """Remove subscriber from mailing list.
 
     Returns:
-        JSON response with status and message
+        JSON response with status and HTTP status code
     """
-    try:
-        data = request.get_json()
-        
-        if not data or "email" not in data:
-            return jsonify({"success": False, "message": "Email is required"}), 400
+    data = request.get_json()
 
-        email = data["email"]
-        removed = subscriber_manager.remove_subscriber(email)
+    if not data or "email" not in data:
+        return jsonify({"success": False, "error": "Email required"}), 400
 
-        if not removed:
-            return jsonify(
-                {"success": False, "message": "Email not found in subscriber list"}
-            ), 404
+    email = data["email"]
+    removed = subscriber_manager.remove_subscriber(email)
 
-        return jsonify({"success": True, "message": "Unsubscribed successfully"}), 200
-
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
+    if removed:
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "message": "Successfully unsubscribed",
+                    "count": subscriber_manager.count(),
+                }
+            ),
+            200,
+        )
+    else:
+        return (
+            jsonify({"success": False, "error": "Email not found"}),
+            404,
+        )
 
 
 @app.route("/api/subscribers", methods=["GET"])
-def get_subscribers() -> Dict[str, Any]:
-    """Get list of all subscribers.
+def get_subscribers() -> Tuple[Dict[str, Any], int]:
+    """Get all subscribers.
 
     Returns:
-        JSON response with subscriber list and count
+        JSON response with subscribers list and HTTP status code
     """
     subscribers = subscriber_manager.get_subscribers()
-    return jsonify(
-        {"success": True, "subscribers": subscribers, "count": len(subscribers)}
+    return (
+        jsonify(
+            {
+                "success": True,
+                "subscribers": subscribers,
+                "count": len(subscribers),
+            }
+        ),
+        200,
     )
 
 
 @app.route("/api/send-email", methods=["POST"])
-def send_email() -> Dict[str, Any]:
+def send_email() -> Tuple[Dict[str, Any], int]:
     """Send email to all subscribers.
 
     Returns:
-        JSON response with sending results
-
-    Example Request:
-        POST /api/send-email
-        {"subject": "Newsletter", "body": "Hello subscribers!"}
+        JSON response with send result and HTTP status code
     """
-    try:
-        data = request.get_json()
+    data = request.get_json()
 
-        if not data or "subject" not in data or "body" not in data:
-            return jsonify(
-                {"success": False, "message": "Subject and body are required"}
-            ), 400
+    if not data:
+        return jsonify({"success": False, "error": "No data provided"}), 400
 
-        subject = data["subject"]
-        body = data["body"]
-        html = data.get("html", False)
+    subject = data.get("subject", "")
+    body = data.get("body", "")
+    html = data.get("html", False)
 
-        subscribers = subscriber_manager.get_subscribers()
+    if not subject or not body:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": "Subject and body required",
+                }
+            ),
+            400,
+        )
 
-        if not subscribers:
-            return jsonify(
-                {"success": False, "message": "No subscribers to send email to"}
-            ), 400
+    subscribers = subscriber_manager.get_subscribers()
 
-        results = email_sender.send_bulk(subscribers, subject, body, html=html)
-        success_count = email_sender.get_success_count(results)
+    if not subscribers:
+        return (
+            jsonify({"success": False, "error": "No subscribers"}),
+            400,
+        )
 
-        return jsonify(
-            {
-                "success": True,
-                "message": f"Sent to {success_count}/{len(subscribers)} subscribers",
-                "sent": success_count,
-                "total": len(subscribers),
-            }
-        ), 200
+    result = email_sender.send_email(subscribers, subject, body, html)
 
-    except Exception as e:
-        return jsonify({"success": False, "message": str(e)}), 500
-
-
-@app.errorhandler(404)
-def not_found(error: Any) -> tuple:
-    """Handle 404 errors.
-
-    Args:
-        error: Error object
-
-    Returns:
-        JSON response with error message
-    """
-    return jsonify({"success": False, "message": "Endpoint not found"}), 404
-
-
-@app.errorhandler(500)
-def internal_error(error: Any) -> tuple:
-    """Handle 500 errors.
-
-    Args:
-        error: Error object
-
-    Returns:
-        JSON response with error message
-    """
-    return jsonify({"success": False, "message": "Internal server error"}), 500
+    if result.success:
+        return (
+            jsonify(
+                {
+                    "success": True,
+                    "message": result.message,
+                    "sent_count": len(subscribers),
+                }
+            ),
+            200,
+        )
+    else:
+        return (
+            jsonify(
+                {
+                    "success": False,
+                    "error": result.message,
+                    "failed": result.failed_recipients,
+                }
+            ),
+            500,
+        )
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.getenv("PORT", "5000"))
+    debug = os.getenv("FLASK_DEBUG", "True").lower() == "true"
+    app.run(host="0.0.0.0", port=port, debug=debug)
