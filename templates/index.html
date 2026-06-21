@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mailer - Subscriber Management</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>📧 Mailer</h1>
+            <p>Manage your mailing list and send newsletters</p>
+        </header>
+
+        <section class="subscribe-section">
+            <h2>Subscribe to Newsletter</h2>
+            <form id="subscribe-form">
+                <input 
+                    type="email" 
+                    id="email-input" 
+                    placeholder="Enter your email address" 
+                    required
+                />
+                <button type="submit">Subscribe</button>
+            </form>
+            <div id="message"></div>
+        </section>
+
+        <section class="subscribers-section">
+            <h2>Subscribers ({{ count }})</h2>
+            <div class="subscribers-list" id="subscribers-list">
+                {% if subscribers %}
+                    <ul>
+                    {% for subscriber in subscribers %}
+                        <li>
+                            <span>{{ subscriber }}</span>
+                            <button class="unsubscribe-btn" data-email="{{ subscriber }}">Unsubscribe</button>
+                        </li>
+                    {% endfor %}
+                    </ul>
+                {% else %}
+                    <p class="empty-state">No subscribers yet. Be the first to subscribe!</p>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="send-email-section">
+            <h2>Send Email to All Subscribers</h2>
+            <form id="send-email-form">
+                <input 
+                    type="text" 
+                    id="subject-input" 
+                    placeholder="Email Subject" 
+                    required
+                />
+                <textarea 
+                    id="body-input" 
+                    placeholder="Email Body" 
+                    rows="6"
+                    required
+                ></textarea>
+                <label>
+                    <input type="checkbox" id="html-checkbox" />
+                    Send as HTML
+                </label>
+                <button type="submit">Send to All</button>
+            </form>
+            <div id="send-message"></div>
+        </section>
+    </div>
+
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
